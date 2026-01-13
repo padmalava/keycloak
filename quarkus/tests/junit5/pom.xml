@@ -29,12 +29,14 @@
     </parent>
 
     <name>Keycloak Quarkus Server JUnit 5 Internal Test Framework</name>
+    <description>Keycloak Quarkus Server JUnit 5 Internal Test Framework</description>
+
     <artifactId>keycloak-junit5</artifactId>
     <packaging>jar</packaging>
 
     <properties>
         <kc.quarkus.tests.dist>raw</kc.quarkus.tests.dist>
-        <approvaltests.version>14.0.0</approvaltests.version>
+        <approvaltests.version>26.1.0</approvaltests.version>
         <build-helper-maven-plugin.version>3.3.0</build-helper-maven-plugin.version>
         <maven-resolver-util.version>1.9.10</maven-resolver-util.version>
     </properties>
@@ -99,6 +101,10 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>mssqlserver</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>tidb</artifactId>
         </dependency>
 
         <!-- JDBC Drivers -->

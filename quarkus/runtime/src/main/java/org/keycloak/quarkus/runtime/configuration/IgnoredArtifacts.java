@@ -16,9 +16,6 @@
  */
 package org.keycloak.quarkus.runtime.configuration;
 
-import static java.util.Collections.emptySet;
-import static org.keycloak.quarkus.runtime.Environment.getCurrentOrCreateFeatureProfile;
-
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.Set;
@@ -28,7 +25,12 @@ import java.util.stream.Stream;
 import org.keycloak.common.Profile;
 import org.keycloak.config.HealthOptions;
 import org.keycloak.config.MetricsOptions;
+import org.keycloak.config.TelemetryOptions;
 import org.keycloak.config.database.Database;
+
+import static java.util.Collections.emptySet;
+
+import static org.keycloak.quarkus.runtime.Environment.getCurrentOrCreateFeatureProfile;
 
 /**
  * Ignore particular artifacts based on build configuration
@@ -40,7 +42,8 @@ public class IgnoredArtifacts {
                         fips(),
                         jdbcDrivers(),
                         health(),
-                        metrics()
+                        metrics(),
+                        otelMetrics()
                 )
                 .flatMap(Collection::stream)
                 .collect(Collectors.toUnmodifiableSet());
@@ -133,7 +136,7 @@ public class IgnoredArtifacts {
         final Set<String> jdbcArtifacts = vendorsOfAllDatasources.stream()
                 .map(vendor -> switch (vendor) {
                     case H2 -> JDBC_H2;
-                    case MYSQL -> JDBC_MYSQL;
+                    case MYSQL, TIDB -> JDBC_MYSQL;
                     case MARIADB -> JDBC_MARIADB;
                     case POSTGRES -> JDBC_POSTGRES;
                     case MSSQL -> JDBC_MSSQL;
@@ -169,5 +172,17 @@ public class IgnoredArtifacts {
     private static Set<String> metrics() {
         boolean isMetricsEnabled = Configuration.isTrue(MetricsOptions.METRICS_ENABLED);
         return !isMetricsEnabled ? METRICS : emptySet();
+    }
+
+    // OpenTelemetry Metrics (Micrometer to OTel bridge)
+    public static Set<String> OTEL_METRICS = Set.of(
+            "io.quarkus:quarkus-micrometer-opentelemetry",
+            "io.quarkus:quarkus-micrometer-opentelemetry-deployment",
+            "io.opentelemetry.instrumentation:opentelemetry-micrometer-1.5"
+    );
+
+    private static Set<String> otelMetrics() {
+        boolean isOtelMetricsEnabled = Configuration.isTrue(TelemetryOptions.TELEMETRY_METRICS_ENABLED);
+        return !isOtelMetricsEnabled ? OTEL_METRICS : emptySet();
     }
 }

@@ -18,15 +18,19 @@
 package org.keycloak.it.junit5.extension;
 
 import java.time.Duration;
+import java.util.logging.Logger;
 
 import org.keycloak.it.utils.KeycloakDistribution;
+
+import org.jboss.logmanager.Level;
+import org.jboss.logmanager.LogManager;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.JdbcDatabaseContainer;
 import org.testcontainers.containers.MSSQLServerContainer;
 import org.testcontainers.containers.MariaDBContainer;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.images.PullPolicy;
+import org.testcontainers.tidb.TiDBContainer;
 import org.testcontainers.utility.DockerImageName;
 
 public class DatabaseContainer {
@@ -95,6 +99,7 @@ public class DatabaseContainer {
         String MARIADB_IMAGE = System.getProperty("kc.db.mariadb.container.image");
         String MYSQL_IMAGE = System.getProperty("kc.db.mysql.container.image");
         String MSSQL_IMAGE = System.getProperty("kc.db.mssql.container.image");
+        String TIDB_IMAGE = System.getProperty("kc.db.tidb.container.image");
 
         switch (alias) {
             case "postgres":
@@ -108,7 +113,23 @@ public class DatabaseContainer {
                 return configureJdbcContainer(new MySQLContainer<>(MYSQL));
             case "mssql":
                 DockerImageName MSSQL = DockerImageName.parse(MSSQL_IMAGE).asCompatibleSubstituteFor("sqlserver");
-                return configureJdbcContainer(new MSSQLServerContainer<>(MSSQL));
+                return configureJdbcContainer(new MSSQLServerContainer(MSSQL) {
+                    @Override
+                    public void start() {
+                        // avoid WARNING [com.microsoft.sqlserver.jdbc.internals.SQLServerConnection] (main) ConnectionID:32 ClientConnectionId: Prelogin error ...
+                        Logger mssqlLogger = LogManager.getLogManager().getLogger("com.microsoft.sqlserver.jdbc.internals.SQLServerConnection");
+                        java.util.logging.Level level = mssqlLogger.getLevel();
+                        try {
+                            mssqlLogger.setLevel(Level.ERROR);
+                            super.start();
+                        } finally {
+                            mssqlLogger.setLevel(level);
+                        }
+                    }
+                });
+            case "tidb":
+                DockerImageName TIDB = DockerImageName.parse(TIDB_IMAGE).asCompatibleSubstituteFor("pingcap/tidb");
+                return configureJdbcContainer(new TiDBContainer(TIDB));
             default:
                 throw new RuntimeException("Unsupported database: " + alias);
         }

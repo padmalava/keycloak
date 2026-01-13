@@ -17,26 +17,29 @@
 
 package org.keycloak.protocol.oid4vc.model;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import org.keycloak.models.oid4vci.CredentialScopeModel;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.RealmModel;
-import org.keycloak.util.JsonSerialization;
-
 import java.util.Map;
 import java.util.Optional;
+
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.oid4vci.CredentialScopeModel;
+import org.keycloak.util.JsonSerialization;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.core.JsonProcessingException;
 
 /**
- * Represents a  CredentialRequest according to OID4VCI
+ * Represents a CredentialRequest according to OID4VCI
  * {@see https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-credential-request}
  *
  * @author <a href="https://github.com/wistefan">Stefan Wiedemann</a>
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class CredentialRequest {
 
     @JsonProperty("credential_configuration_id")
@@ -45,17 +48,33 @@ public class CredentialRequest {
     @JsonProperty("credential_identifier")
     private String credentialIdentifier;
 
+    @JsonProperty("proofs")
+    private Proofs proofs;
+
+    /**
+     * Deprecated: use {@link #proofs} instead.
+     * This field is kept only for backward compatibility with clients sending a single 'proof'.
+     * Can be either {@link JwtProof} or {@link AttestationProof} depending on the proof type.
+     */
+    @Deprecated
     @JsonProperty("proof")
-    @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "proof_type")
+    @JsonTypeInfo(
+            use = JsonTypeInfo.Id.NAME,
+            include = JsonTypeInfo.As.EXISTING_PROPERTY,
+            property = "proof_type"
+    )
     @JsonSubTypes({
-            @JsonSubTypes.Type(value = JwtProof.class, name = ProofType.JWT),
-            @JsonSubTypes.Type(value = LdpVpProof.class, name = ProofType.LD_PROOF)
+            @JsonSubTypes.Type(value = JwtProof.class, name = "jwt"),
+            @JsonSubTypes.Type(value = AttestationProof.class, name = "attestation")
     })
-    private Proof proof;
+    private Object proof;
 
     // See: https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html#name-format-identifier-3
     @JsonProperty("credential_definition")
     private CredentialDefinition credentialDefinition;
+
+    @JsonProperty("credential_response_encryption")
+    private CredentialResponseEncryption credentialResponseEncryption;
 
     public String getCredentialIdentifier() {
         return credentialIdentifier;
@@ -75,11 +94,20 @@ public class CredentialRequest {
         return this;
     }
 
-    public Proof getProof() {
+    public Proofs getProofs() {
+        return proofs;
+    }
+
+    public CredentialRequest setProofs(Proofs proofs) {
+        this.proofs = proofs;
+        return this;
+    }
+
+    public Object getProof() {
         return proof;
     }
 
-    public CredentialRequest setProof(Proof proof) {
+    public CredentialRequest setProof(Object proof) {
         this.proof = proof;
         return this;
     }
@@ -90,6 +118,15 @@ public class CredentialRequest {
 
     public CredentialRequest setCredentialDefinition(CredentialDefinition credentialDefinition) {
         this.credentialDefinition = credentialDefinition;
+        return this;
+    }
+
+    public CredentialResponseEncryption getCredentialResponseEncryption() {
+        return credentialResponseEncryption;
+    }
+
+    public CredentialRequest setCredentialResponseEncryption(CredentialResponseEncryption credentialResponseEncryption) {
+        this.credentialResponseEncryption = credentialResponseEncryption;
         return this;
     }
 
@@ -105,9 +142,9 @@ public class CredentialRequest {
         RealmModel currentRealm = keycloakSession.getContext().getRealm();
         final boolean useOrExpression = false;
         return keycloakSession.clientScopes()
-                              .getClientScopesByAttributes(currentRealm, searchAttributeMap, useOrExpression)
-                              .map(CredentialScopeModel::new)
-                              .findAny();
+                .getClientScopesByAttributes(currentRealm, searchAttributeMap, useOrExpression)
+                .map(CredentialScopeModel::new)
+                .findAny();
     }
 
     @Override

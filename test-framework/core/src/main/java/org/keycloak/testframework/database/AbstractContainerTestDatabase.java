@@ -5,9 +5,11 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
-import org.jboss.logging.Logger;
 import org.keycloak.testframework.config.Config;
 import org.keycloak.testframework.logging.JBossLogConsumer;
+
+import org.jboss.logging.Logger;
+import org.testcontainers.containers.Container;
 import org.testcontainers.containers.JdbcDatabaseContainer;
 
 public abstract class AbstractContainerTestDatabase implements TestDatabase {
@@ -15,14 +17,14 @@ public abstract class AbstractContainerTestDatabase implements TestDatabase {
     protected boolean reuse;
 
     protected JdbcDatabaseContainer<?> container;
-    protected DatabaseConfig config;
+    protected DatabaseConfiguration config;
 
-    public void start(DatabaseConfig config) {
+    public void start(DatabaseConfiguration config) {
         this.config = config;
 
         String reuseProp = Config.getValueTypeFQN(TestDatabase.class, "reuse");
         boolean reuseConfigured = Config.get(reuseProp, false, Boolean.class);
-        if (config.preventReuse() && reuseConfigured) {
+        if (config.isPreventReuse() && reuseConfigured) {
             getLogger().warnf("Ignoring '%s' as test explicitly prevents it", reuseProp);
             this.reuse = false;
         } else {
@@ -33,7 +35,7 @@ public abstract class AbstractContainerTestDatabase implements TestDatabase {
         container = container.withStartupTimeout(Duration.ofMinutes(10))
                 .withLogConsumer(new JBossLogConsumer(Logger.getLogger("managed.db." + getDatabaseVendor())))
                 .withReuse(reuse)
-                .withInitScript(config.initScript());
+                .withInitScript(config.getInitScript());
         withDatabaseAndUser(getDatabase(), getUsername(), getPassword());
         container.start();
 
@@ -41,8 +43,14 @@ public abstract class AbstractContainerTestDatabase implements TestDatabase {
             List<String> postStartCommand = getPostStartCommand();
             if (postStartCommand != null) {
                 getLogger().tracev("Running post start command: {0}", String.join(" ", postStartCommand));
-                String result = container.execInContainer(postStartCommand.toArray(new String[0])).getStdout();
-                getLogger().tracev(result);
+                Container.ExecResult execResult = container.execInContainer(postStartCommand.toArray(new String[0]));
+                String stdout = execResult.getStdout();
+                String stderr = execResult.getStderr();
+                getLogger().tracev(stdout);
+                getLogger().tracev(stderr);
+                if (execResult.getExitCode() != 0) {
+                    throw new RuntimeException("Post start command failed with exit code: " + execResult.getExitCode() + ". stdout: " + stdout + ". stderr: " + stderr);
+                }
             }
         } catch (IOException | InterruptedException e) {
             throw new RuntimeException(e);
@@ -82,7 +90,7 @@ public abstract class AbstractContainerTestDatabase implements TestDatabase {
     }
 
     public String getDatabase() {
-;        return config.database() == null ? "keycloak" : config.database();
+        return config.getDatabase() == null ? "keycloak" : config.getDatabase();
     }
 
     public String getUsername() {

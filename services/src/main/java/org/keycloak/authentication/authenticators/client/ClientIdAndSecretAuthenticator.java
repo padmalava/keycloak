@@ -17,6 +17,19 @@
 
 package org.keycloak.authentication.authenticators.client;
 
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.Response;
+
 import org.keycloak.OAuth2Constants;
 import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.authentication.ClientAuthenticationFlowContext;
@@ -25,20 +38,10 @@ import org.keycloak.models.ClientModel;
 import org.keycloak.protocol.oidc.OIDCClientSecretConfigWrapper;
 import org.keycloak.protocol.oidc.OIDCLoginProtocol;
 import org.keycloak.provider.ProviderConfigProperty;
+import org.keycloak.representations.idm.ClientRepresentation;
 import org.keycloak.representations.idm.CredentialRepresentation;
 import org.keycloak.util.BasicAuthHelper;
-
-import jakarta.ws.rs.core.HttpHeaders;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.MultivaluedMap;
-import jakarta.ws.rs.core.Response;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import org.keycloak.utils.StringUtil;
 
 /**
  * Validates client based on "client_id" and "client_secret" sent either in request parameters or in "Authorization: Basic" header .
@@ -63,11 +66,14 @@ public class ClientIdAndSecretAuthenticator extends AbstractClientAuthenticator 
 
         MultivaluedMap<String, String> formData = hasFormData ? context.getHttpRequest().getDecodedFormParameters() : null;
 
+        String clientSecretRetrievalUsedMethod = null; // Tracks how was client_secret obtained
+
         if (authorizationHeader != null) {
             String[] usernameSecret = BasicAuthHelper.RFC6749.parseHeader(authorizationHeader);
             if (usernameSecret != null) {
                 client_id = usernameSecret[0];
                 clientSecret = usernameSecret[1];
+                clientSecretRetrievalUsedMethod = OIDCLoginProtocol.CLIENT_SECRET_BASIC;
             } else {
 
                 // Don't send 401 if client_id parameter was sent in request. For example IE may automatically send "Authorization: Negotiate" in XHR requests even for public clients
@@ -87,6 +93,7 @@ public class ClientIdAndSecretAuthenticator extends AbstractClientAuthenticator 
             }
             if (formData.containsKey(OAuth2Constants.CLIENT_SECRET)) {
                 clientSecret = formData.getFirst(OAuth2Constants.CLIENT_SECRET);
+                clientSecretRetrievalUsedMethod = OIDCLoginProtocol.CLIENT_SECRET_POST;
             }
         }
 
@@ -133,6 +140,14 @@ public class ClientIdAndSecretAuthenticator extends AbstractClientAuthenticator 
         }
 
         OIDCClientSecretConfigWrapper wrapper = OIDCClientSecretConfigWrapper.fromClientModel(client);
+
+        String clientSecretAllowedMethod = wrapper.getClientSecretAuthenticationAllowedMethod();
+        if (StringUtil.isNotBlank(clientSecretAllowedMethod) && !clientSecretAllowedMethod.equals(clientSecretRetrievalUsedMethod)) {
+            Response challengeResponse = ClientAuthUtil.errorResponse(Response.Status.UNAUTHORIZED.getStatusCode(), "unauthorized_client", "Invalid method used to get client secret. Client requires method '"
+                    + clientSecretAllowedMethod + "' to obtain client secret from the request");
+            context.failure(AuthenticationFlowError.INVALID_CLIENT_CREDENTIALS, challengeResponse);
+            return;
+        }
 
         if (!client.validateSecret(clientSecret)) {
             if (!wrapper.validateRotatedSecret(clientSecret)){
@@ -201,6 +216,20 @@ public class ClientIdAndSecretAuthenticator extends AbstractClientAuthenticator 
             return results;
         } else {
             return Collections.emptySet();
+        }
+    }
+
+    @Override
+    public String getProtocolAuthenticatorMethod(ClientRepresentation client) {
+        String clientSecretAllowedMethod = OIDCClientSecretConfigWrapper.fromClientRepresentation(client).getClientSecretAuthenticationAllowedMethod();
+        return clientSecretAllowedMethod == null ? super.getProtocolAuthenticatorMethod(client) : clientSecretAllowedMethod;
+    }
+
+    @Override
+    public void setClientAuthenticationMethod(ClientRepresentation client, String protocolAuthMethod) {
+        client.setClientAuthenticatorType(getId());
+        if (protocolAuthMethod != null) {
+            OIDCClientSecretConfigWrapper.fromClientRepresentation(client).setClientSecretAuthenticationAllowedMethod(protocolAuthMethod);
         }
     }
 

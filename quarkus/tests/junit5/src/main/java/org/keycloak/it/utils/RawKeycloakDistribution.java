@@ -55,16 +55,6 @@ import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 
-import io.quarkus.deployment.util.FileUtil;
-import io.quarkus.fs.util.ZipUtils;
-
-import io.restassured.RestAssured;
-import org.awaitility.Awaitility;
-import org.jboss.logging.Logger;
-import org.jboss.shrinkwrap.api.ShrinkWrap;
-import org.jboss.shrinkwrap.api.asset.EmptyAsset;
-import org.jboss.shrinkwrap.api.exporter.ZipExporter;
-import org.jboss.shrinkwrap.api.spec.JavaArchive;
 import org.keycloak.common.Version;
 import org.keycloak.it.TestProvider;
 import org.keycloak.it.junit5.extension.CLIResult;
@@ -72,6 +62,16 @@ import org.keycloak.quarkus.runtime.Environment;
 import org.keycloak.quarkus.runtime.cli.command.Build;
 import org.keycloak.quarkus.runtime.configuration.mappers.PropertyMapper;
 import org.keycloak.quarkus.runtime.configuration.mappers.PropertyMappers;
+
+import io.quarkus.deployment.util.FileUtil;
+import io.quarkus.fs.util.ZipUtils;
+import io.restassured.RestAssured;
+import org.awaitility.Awaitility;
+import org.jboss.logging.Logger;
+import org.jboss.shrinkwrap.api.ShrinkWrap;
+import org.jboss.shrinkwrap.api.asset.EmptyAsset;
+import org.jboss.shrinkwrap.api.exporter.ZipExporter;
+import org.jboss.shrinkwrap.api.spec.JavaArchive;
 
 import static org.keycloak.quarkus.runtime.Environment.LAUNCH_MODE;
 import static org.keycloak.quarkus.runtime.Environment.isWindows;
@@ -97,6 +97,9 @@ public final class RawKeycloakDistribution implements KeycloakDistribution {
     private boolean inited = false;
     private final Map<String, String> envVars = new HashMap<>();
     private final OutputConsumer outputConsumer;
+    private long startTimeout = TimeUnit.SECONDS.toMillis(Long.getLong("keycloak.distribution.start.timeout", 120L));
+    private boolean throwErrorIfFailedToStart = false;
+    private boolean threadDump = true;
 
     public RawKeycloakDistribution(boolean debug, boolean manualStop, boolean enableTls, boolean reCreate, boolean removeBuildOptionsAfterBuild, int requestPort) {
         this(debug, manualStop, enableTls, reCreate, removeBuildOptionsAfterBuild, requestPort, new DefaultOutputConsumer());
@@ -111,6 +114,21 @@ public final class RawKeycloakDistribution implements KeycloakDistribution {
         this.requestPort = requestPort;
         this.distPath = prepareDistribution();
         this.outputConsumer = outputConsumer;
+    }
+
+    public RawKeycloakDistribution withThrowErrorIfFailedToStart(boolean throwErrorIfFailedToStart) {
+        this.throwErrorIfFailedToStart = throwErrorIfFailedToStart;
+        return this;
+    }
+
+    public RawKeycloakDistribution withThreadDump(boolean threadDump) {
+        this.threadDump = threadDump;
+        return this;
+    }
+
+    public RawKeycloakDistribution withStartTimeout(long startTimeout) {
+        this.startTimeout = startTimeout;
+        return this;
     }
 
     public CLIResult kcadm(String... arguments) throws IOException {
@@ -334,7 +352,11 @@ public final class RawKeycloakDistribution implements KeycloakDistribution {
     }
 
     private void waitForReadiness(String scheme, int port) throws MalformedURLException {
-        URL contextRoot = new URL(scheme + "://localhost:" + port + ("/" + relativePath + "/realms/master/").replace("//", "/"));
+        var myRelativePath = relativePath;
+        if (!myRelativePath.endsWith("/")) {
+            myRelativePath += "/";
+        }
+        URL contextRoot = new URL(scheme + "://localhost:" + port + myRelativePath + "realms/master/");
         HttpURLConnection connection = null;
         long startTime = System.currentTimeMillis();
         Exception ex = null;
@@ -347,7 +369,11 @@ public final class RawKeycloakDistribution implements KeycloakDistribution {
             }
 
             if (!keycloak.isAlive()) {
-                return;
+                if (throwErrorIfFailedToStart) {
+                    throw new RuntimeException("Keycloak failed to start: process terminated");
+                } else {
+                    return;
+                }
             }
 
             try {
@@ -382,6 +408,10 @@ public final class RawKeycloakDistribution implements KeycloakDistribution {
     }
 
     private void threadDump() {
+        if (!threadDump) {
+            return;
+        }
+
         if (Environment.isWindows()) {
             return;
         }
@@ -398,7 +428,7 @@ public final class RawKeycloakDistribution implements KeycloakDistribution {
     }
 
     private long getStartTimeout() {
-        return TimeUnit.SECONDS.toMillis(Long.getLong("keycloak.distribution.start.timeout", 120L));
+        return startTimeout;
     }
 
     private HostnameVerifier createInsecureHostnameVerifier() {
