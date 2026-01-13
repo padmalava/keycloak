@@ -1,41 +1,31 @@
-name: Create Crypto Bill of Materials
-
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
 
 jobs:
-  build-matrix:
-    name: Build analysis matrix
+  cbom-scan:
     runs-on: ubuntu-latest
-    outputs:
-      repositories: ${{ steps.build-matrix-action.outputs.repositories }}
+    name: CBOM generation
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
-      - uses: advanced-security/cbom-action/build-matrix@v1
-        id: build-matrix-action
-        with:
-          repositoryNameWithOwner: ${{ github.repository }}
-          analyzeDependencies: true
-          minimumLanguageBytes: 0
-  run-cbom-action:
-    name: ${{ fromJson(matrix.repository).nameWithOwner }} - ${{ fromJson(matrix.repository).language }}
-    runs-on: ubuntu-latest
-    needs: build-matrix
-    continue-on-error: true
-    strategy:
-      fail-fast: false
-      matrix:
-        repository: ${{ fromJSON(needs.build-matrix.outputs.repositories) }}
-    steps:
-      - uses: advanced-security/cbom-action/analyze@v1
-        with:
-          repositoryNameWithOwner: ${{ fromJson(matrix.repository).nameWithOwner }}
-          language: ${{ fromJson(matrix.repository).language }}
-  add-workflow-summary:
-    name: CBOM results
-    runs-on: ubuntu-latest
-    needs: run-cbom-action
-    steps:
-      - uses: advanced-security/cbom-action/workflow-summary@v1
+      - name: Checkout repository
+        uses: actions/checkout@v5
+      - name: Build with Maven
+        # When scanning Java code, the build should be completed beforehand
+        run: mvn -B clean package -DskipTests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Create CBOM
+        uses: cbomkit/cbomkit-action@v2.1.1
+        id: cbom
+        env:
+          CBOMKIT_LANGUAGES: java, python # or java or python
+      - name: Commit changes to new branch
+        # Allows persisting the CBOMs after job completion and
+        # sharing them with another job in the same workflow.
+        uses: actions/upload-artifact@v4
+        with: 
+          name: "CBOM"
+          path: cbom.json
+          if-no-files-found: warn 
