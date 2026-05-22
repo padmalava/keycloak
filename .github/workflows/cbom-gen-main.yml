@@ -29,15 +29,15 @@ jobs:
         run: |
           # Use baseline if it exists, fail on new HIGH+ findings
           if [ -f baseline.json ]; then
-            cryptoscan scan . --baseline baseline.json --fail-on high --format sarif --output results.sarif
+            cryptoscan scan . --baseline baseline.json --fail-on high --format sarif --output ${{ github.workspace }}/results.sarif
           else
-            cryptoscan scan . --fail-on critical --format sarif --output results.sarif
+            cryptoscan scan . --fail-on critical --format sarif --output ${{ github.workspace }}/results.sarif
           fi
 
       - name: Create empty SARIF on failure
         if: failure() && steps.scan.outcome == 'failure'
         run: |
-          cat > results.sarif <<'EOF'
+          cat > ${{ github.workspace }}/results.sarif <<'EOF'
           {
             "version": "2.1.0",
             "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
@@ -63,4 +63,4 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
-          sarif_file: results.sarif
+          sarif_file: ${{ github.workspace }}/results.sarif
