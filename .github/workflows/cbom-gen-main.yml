@@ -27,13 +27,13 @@ jobs:
         run: |
           # Use baseline if it exists, fail on new HIGH+ findings
           if [ -f baseline.json ]; then
-            cryptoscan scan . --baseline baseline.json --fail-on high --format sarif --output results.sarif
+            cryptoscan scan . --baseline baseline.json --fail-on high --format sarif --output ./results.sarif
           else
-            cryptoscan scan . --fail-on critical --format sarif --output results.sarif
+            cryptoscan scan . --fail-on critical --format sarif --output ./results.sarif
           fi
 
       - name: Upload SARIF to GitHub Security
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: results.sarif
+          sarif_file: ./results.sarif
